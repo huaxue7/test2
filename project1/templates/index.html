@@ -979,15 +979,35 @@ function togglePause() {
 //  排行榜
 // ============================================================
 
-async function fetchRank() {
+async function fetchRankMerged() {
+  // 同时从 API 和 localStorage 获取
+  const local = getLocalScores();
+  let remote = [];
   try {
     const res = await fetch('/api/rank');
     const data = await res.json();
-    return data.scores || [];
-  } catch { return []; }
+    remote = data.scores || [];
+  } catch { /* API 不可用时只用本地 */ }
+  // 合并去重
+  const merged = mergeScores(remote, local);
+  // 同步回 localStorage
+  saveLocalScores(merged.slice(0, 50));
+  return merged;
 }
 
 async function submitScore(name, score, level, lines) {
+  // 先存到 localStorage
+  const local = getLocalScores();
+  local.push({
+    name: name || '匿名玩家',
+    score: score,
+    level: level,
+    lines: lines,
+    date: new Date().toISOString().slice(0, 16).replace('T', ' '),
+  });
+  local.sort((a, b) => b.score - a.score);
+  saveLocalScores(local.slice(0, 50));
+  // 再发到服务器（失败了也不影响）
   try {
     await fetch('/api/rank', {
       method: 'POST',
@@ -998,7 +1018,7 @@ async function submitScore(name, score, level, lines) {
 }
 
 async function renderRank() {
-  const scores = await fetchRank();
+  const scores = await fetchRankMerged();
   if (scores.length === 0) {
     rankList.innerHTML = '<div class="rank-empty">暂无记录</div>';
     return;
@@ -1088,3 +1108,29 @@ requestAnimationFrame(bgLoop);
 </script>
 </body>
 </html>
+// ============================================================
+//  排行榜（含 localStorage 持久化）
+// ============================================================
+
+const LS_KEY = 'tetris_scores';
+
+function getLocalScores() {
+  try {
+    return JSON.parse(localStorage.getItem(LS_KEY)) || [];
+  } catch { return []; }
+}
+
+function saveLocalScores(scores) {
+  try {
+    localStorage.setItem(LS_KEY, JSON.stringify(scores));
+  } catch { /* ignore */ }
+}
+
+function mergeScores(remote, local) {
+  const map = new Map();
+  for (const s of [...remote, ...local]) {
+    const key = s.name + s.score + s.date;
+    if (!map.has(key)) map.set(key, s);
+  }
+  return Array.from(map.values()).sort((a, b) => b.score - a.score);
+}

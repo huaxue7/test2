@@ -1,0 +1,15 @@
+{
+  "buildCommand": null,
+  "outputDirectory": null,
+  "devCommand": null,
+  "installCommand": "pip install -r api/requirements.txt",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index" }
+  ],
+  "functions": {
+    "api/index.py": {
+      "memory": 256,
+      "maxDuration": 10
+    }
+  }
+}
