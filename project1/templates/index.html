@@ -1,0 +1,1090 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>俄罗斯方块 - Tetris</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0a0a1a;
+    color: #e0e0e0;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+  }
+
+  /* ---- 背景星空粒子 ---- */
+  #bgCanvas {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+    pointer-events: none;
+  }
+
+  .game-wrapper {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    gap: 28px;
+    align-items: flex-start;
+    padding: 28px;
+    background: linear-gradient(135deg, #141430 0%, #1a1a3e 100%);
+    border-radius: 18px;
+    box-shadow:
+      0 8px 48px rgba(0,0,0,0.6),
+      inset 0 1px 0 rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .board-container {
+    position: relative;
+  }
+
+  canvas#board {
+    display: block;
+    background: #0a0a2e;
+    border: 2px solid #2a2a5e;
+    border-radius: 6px;
+    image-rendering: pixelated;
+    box-shadow: 0 0 30px rgba(80, 80, 255, 0.08);
+  }
+
+  /* ---- 消除闪光 ---- */
+  #flashOverlay {
+    position: absolute;
+    inset: 0;
+    border-radius: 6px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.08s;
+  }
+  #flashOverlay.flash {
+    opacity: 1;
+  }
+
+  .side-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-width: 150px;
+  }
+
+  .panel-box {
+    background: rgba(15, 20, 60, 0.7);
+    border-radius: 10px;
+    padding: 14px 16px;
+    border: 1px solid rgba(255,255,255,0.05);
+  }
+
+  .panel-box h3 {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: #667;
+    margin-bottom: 6px;
+  }
+
+  .panel-box .value {
+    font-size: 26px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: #fff;
+    text-shadow: 0 0 12px rgba(100, 150, 255, 0.15);
+  }
+
+  .panel-box .value.score-pop {
+    animation: scorePop 0.3s ease-out;
+  }
+  @keyframes scorePop {
+    0% { transform: scale(1.3); color: #ffd700; }
+    100% { transform: scale(1); }
+  }
+
+  canvas#next {
+    display: block;
+    background: rgba(0,0,0,0.3);
+    border-radius: 6px;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    image-rendering: pixelated;
+  }
+
+  .btn-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 11px;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+    letter-spacing: 0.5px;
+  }
+
+  .btn-start {
+    background: linear-gradient(135deg, #e94560, #d63851);
+    color: #fff;
+    box-shadow: 0 4px 16px rgba(233,69,96,0.3);
+  }
+  .btn-start:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(233,69,96,0.4);
+  }
+  .btn-start:disabled {
+    background: #2a2a3e;
+    color: #555;
+    box-shadow: none;
+    cursor: default;
+  }
+
+  .btn-pause {
+    background: linear-gradient(135deg, #f5a623, #e0951a);
+    color: #1a1a2e;
+  }
+  .btn-pause:hover:not(:disabled) {
+    transform: translateY(-1px);
+  }
+  .btn-pause:disabled {
+    background: #2a2a3e;
+    color: #555;
+    cursor: default;
+  }
+
+  .btn-rank-toggle {
+    background: rgba(80, 100, 200, 0.2);
+    color: #8af;
+    border: 1px solid rgba(80, 100, 200, 0.25);
+    font-size: 12px;
+  }
+  .btn-rank-toggle:hover {
+    background: rgba(80, 100, 200, 0.35);
+  }
+
+  .controls-hint {
+    font-size: 11px;
+    color: #555;
+    line-height: 1.7;
+  }
+  .controls-hint kbd {
+    display: inline-block;
+    background: #22224a;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    color: #999;
+    font-family: inherit;
+    border: 1px solid #33336a;
+  }
+
+  /* ---- 排行榜 ---- */
+  .rank-panel {
+    position: absolute;
+    top: 0;
+    right: -10px;
+    transform: translateX(100%);
+    width: 220px;
+    background: rgba(10, 10, 30, 0.95);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 16px;
+    backdrop-filter: blur(12px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s, transform 0.3s;
+  }
+  .rank-panel.show {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateX(100%) translateY(0);
+  }
+  .rank-panel h3 {
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: #8af;
+    margin-bottom: 10px;
+    text-align: center;
+  }
+  .rank-list {
+    list-style: none;
+    max-height: 280px;
+    overflow-y: auto;
+  }
+  .rank-list::-webkit-scrollbar { width: 4px; }
+  .rank-list::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+  .rank-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 6px 4px;
+    font-size: 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .rank-item:last-child { border-bottom: none; }
+  .rank-item .rn { color: #667; width: 22px; }
+  .rank-item .rn.top1 { color: #ffd700; }
+  .rank-item .rn.top2 { color: #c0c0c0; }
+  .rank-item .rn.top3 { color: #cd7f32; }
+  .rank-item .r-name { flex: 1; color: #ccc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-item .r-score { color: #4af; font-weight: 600; }
+  .rank-empty {
+    text-align: center;
+    color: #555;
+    font-size: 12px;
+    padding: 20px 0;
+  }
+
+  /* ---- 游戏结束遮罩 ---- */
+  .game-over-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    border-radius: 6px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s;
+    backdrop-filter: blur(4px);
+  }
+  .game-over-overlay.show {
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .game-over-overlay h2 {
+    font-size: 30px;
+    color: #e94560;
+    text-shadow: 0 0 30px rgba(233,69,96,0.4);
+    margin-bottom: 6px;
+  }
+  .game-over-overlay .final-score {
+    font-size: 16px;
+    color: #ffd700;
+    margin-bottom: 4px;
+  }
+  .game-over-overlay p {
+    font-size: 13px;
+    color: #888;
+    margin-bottom: 14px;
+  }
+  .game-over-overlay input {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 6px;
+    color: #fff;
+    padding: 8px 12px;
+    font-size: 13px;
+    text-align: center;
+    width: 160px;
+    outline: none;
+    margin-bottom: 10px;
+  }
+  .game-over-overlay input:focus {
+    border-color: #4af;
+  }
+  .game-over-overlay .btn-submit-score {
+    background: linear-gradient(135deg, #4af, #38d);
+    color: #fff;
+    padding: 7px 20px;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .game-over-overlay .btn-submit-score:hover {
+    transform: translateY(-1px);
+  }
+  .game-over-overlay .btn-submit-score:disabled {
+    background: #444;
+    cursor: default;
+  }
+
+  @media (max-width: 640px) {
+    .game-wrapper {
+      flex-direction: column;
+      align-items: center;
+      gap: 12px;
+      padding: 14px;
+    }
+    .side-panel {
+      flex-direction: row;
+      flex-wrap: wrap;
+      min-width: unset;
+      width: 100%;
+      justify-content: center;
+    }
+    .panel-box { flex: 1; min-width: 70px; padding: 10px; }
+    .panel-box .value { font-size: 20px; }
+    .controls-hint { display: none; }
+    .rank-panel {
+      position: fixed;
+      top: auto;
+      bottom: 0;
+      right: 0;
+      left: 0;
+      transform: translateY(100%);
+      width: 100%;
+      border-radius: 12px 12px 0 0;
+      max-height: 45vh;
+    }
+    .rank-panel.show {
+      transform: translateY(0);
+    }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="bgCanvas"></canvas>
+
+<div class="game-wrapper">
+  <div class="board-container">
+    <canvas id="board"></canvas>
+    <div id="flashOverlay"></div>
+    <div class="game-over-overlay" id="gameOverOverlay">
+      <h2>游戏结束</h2>
+      <div class="final-score" id="finalScore">0</div>
+      <p>输入名字保存成绩</p>
+      <input type="text" id="nameInput" placeholder="你的名字" maxlength="10" autocomplete="off">
+      <button class="btn-submit-score" id="btnSubmitScore">保存成绩</button>
+    </div>
+  </div>
+
+  <div class="side-panel">
+    <div class="panel-box">
+      <h3>下一个</h3>
+      <canvas id="next"></canvas>
+    </div>
+    <div class="panel-box">
+      <h3>分数</h3>
+      <div class="value" id="scoreDisplay">0</div>
+    </div>
+    <div class="panel-box">
+      <h3>等级</h3>
+      <div class="value" id="levelDisplay">1</div>
+    </div>
+    <div class="panel-box">
+      <h3>已消行</h3>
+      <div class="value" id="linesDisplay">0</div>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-start" id="btnStart">🎮 开始游戏</button>
+      <button class="btn btn-pause" id="btnPause" disabled>⏸ 暂停</button>
+      <button class="btn btn-rank-toggle" id="btnRankToggle">🏆 排行榜</button>
+    </div>
+    <div class="controls-hint">
+      <kbd>←</kbd><kbd>→</kbd> 移动 &nbsp; <kbd>↑</kbd> 旋转<br>
+      <kbd>↓</kbd> 加速 &nbsp; <kbd>空格</kbd> 硬降<br>
+      <kbd>P</kbd> 暂停
+    </div>
+  </div>
+
+  <!-- 排行榜浮层 -->
+  <div class="rank-panel" id="rankPanel">
+    <h3>🏆 排行榜</h3>
+    <div class="rank-list" id="rankList">
+      <div class="rank-empty">暂无记录</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+//  音效系统 - Web Audio API 程序化生成
+// ============================================================
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx = null;
+
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new AudioCtx();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playTone(freq, duration, type, gainVal, ramp) {
+  ensureAudio();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type || 'square';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(gainVal || 0.1, audioCtx.currentTime);
+  const end = audioCtx.currentTime + duration;
+  gain.gain.exponentialRampToValueAtTime(0.001, end);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(end);
+}
+
+const SFX = {
+  move() { playTone(200, 0.05, 'square', 0.06); },
+  rotate() { playTone(300, 0.08, 'sine', 0.08); },
+  drop() { playTone(80, 0.15, 'triangle', 0.12); },
+  lock() { playTone(150, 0.06, 'square', 0.05); },
+  clear(lines) {
+    const base = 400;
+    for (let i = 0; i < lines; i++) {
+      setTimeout(() => playTone(base + i * 100, 0.2, 'sine', 0.12), i * 60);
+    }
+  },
+  levelUp() {
+    [523, 659, 784, 1047].forEach((f, i) => {
+      setTimeout(() => playTone(f, 0.15, 'sine', 0.1), i * 80);
+    });
+  },
+  gameOver() {
+    [300, 250, 200, 150].forEach((f, i) => {
+      setTimeout(() => playTone(f, 0.25, 'sawtooth', 0.08), i * 120);
+    });
+  },
+  submitScore() {
+    [800, 1000, 1200].forEach((f, i) => {
+      setTimeout(() => playTone(f, 0.12, 'sine', 0.08), i * 70);
+    });
+  },
+};
+
+// ============================================================
+//  游戏常量
+// ============================================================
+const COLS = 10;
+const ROWS = 20;
+const BLOCK_SIZE = 30;
+const PREVIEW_BLOCK = 22;
+
+const SHAPES = [
+  { blocks: [[1,1,1,1]], color: '#00f0f0', glow: 'rgba(0,240,240,0.5)' },
+  { blocks: [[1,1],[1,1]], color: '#f0f000', glow: 'rgba(240,240,0,0.5)' },
+  { blocks: [[0,1,0],[1,1,1]], color: '#a000f0', glow: 'rgba(160,0,240,0.5)' },
+  { blocks: [[0,1,1],[1,1,0]], color: '#00f000', glow: 'rgba(0,240,0,0.5)' },
+  { blocks: [[1,1,0],[0,1,1]], color: '#f00000', glow: 'rgba(240,0,0,0.5)' },
+  { blocks: [[1,0,0],[1,1,1]], color: '#0000f0', glow: 'rgba(0,0,240,0.5)' },
+  { blocks: [[0,0,1],[1,1,1]], color: '#f0a000', glow: 'rgba(240,160,0,0.5)' },
+];
+
+// ---- DOM ----
+const boardCanvas = document.getElementById('board');
+const ctx = boardCanvas.getContext('2d');
+const nextCanvas = document.getElementById('next');
+const nextCtx = nextCanvas.getContext('2d');
+const bgCanvas = document.getElementById('bgCanvas');
+const bgCtx = bgCanvas.getContext('2d');
+
+const scoreDisplay = document.getElementById('scoreDisplay');
+const levelDisplay = document.getElementById('levelDisplay');
+const linesDisplay = document.getElementById('linesDisplay');
+const finalScoreEl = document.getElementById('finalScore');
+const btnStart = document.getElementById('btnStart');
+const btnPause = document.getElementById('btnPause');
+const btnRankToggle = document.getElementById('btnRankToggle');
+const btnSubmitScore = document.getElementById('btnSubmitScore');
+const gameOverOverlay = document.getElementById('gameOverOverlay');
+const flashOverlay = document.getElementById('flashOverlay');
+const nameInput = document.getElementById('nameInput');
+const rankPanel = document.getElementById('rankPanel');
+const rankList = document.getElementById('rankList');
+
+boardCanvas.width = COLS * BLOCK_SIZE;
+boardCanvas.height = ROWS * BLOCK_SIZE;
+nextCanvas.width = 4 * PREVIEW_BLOCK;
+nextCanvas.height = 3 * PREVIEW_BLOCK;
+
+// ---- 状态 ----
+let board = [];
+let currentPiece = null;
+let nextPiece = null;
+let score = 0;
+let level = 1;
+let lines = 0;
+let gameRunning = false;
+let paused = false;
+let gameOver = false;
+let dropTimer = null;
+let animationId = null;
+let scoreSubmitted = false;
+
+const SCORE_TABLE = [0, 100, 300, 500, 800];
+
+// ============================================================
+//  粒子系统
+// ============================================================
+let particles = [];
+
+class Particle {
+  constructor(x, y, color, count) {
+    this.x = x;
+    this.y = y;
+    this.vx = (Math.random() - 0.5) * 6;
+    this.vy = (Math.random() - 0.5) * 6 - 2;
+    this.size = Math.random() * 4 + 2;
+    this.color = color;
+    this.life = 1;
+    this.decay = 0.015 + Math.random() * 0.02;
+    this.gravity = 0.08;
+    this.count = count || 1;
+  }
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += this.gravity;
+    this.life -= this.decay;
+  }
+  draw(context) {
+    context.globalAlpha = Math.max(0, this.life);
+    context.fillStyle = this.color;
+    context.shadowColor = this.color;
+    context.shadowBlur = 6;
+    context.fillRect(this.x - this.size / 2, this.y - this.size / 2, this.size, this.size);
+    context.shadowBlur = 0;
+    context.globalAlpha = 1;
+  }
+}
+
+function spawnClearParticles(y) {
+  const colors = ['#ffd700', '#ff6b6b', '#4ecdc4', '#45b7d1', '#f9ca24', '#a000f0', '#00f0f0', '#f0f000'];
+  for (let c = 0; c < COLS; c++) {
+    for (let i = 0; i < 3; i++) {
+      const color = colors[Math.floor(Math.random() * colors.length)];
+      particles.push(new Particle(c * BLOCK_SIZE + BLOCK_SIZE / 2, y * BLOCK_SIZE + BLOCK_SIZE / 2, color));
+    }
+  }
+}
+
+function spawnDropParticles(piece) {
+  const { blocks, x, y, color } = piece;
+  for (let r = 0; r < blocks.length; r++) {
+    for (let c = 0; c < blocks[r].length; c++) {
+      if (!blocks[r][c]) continue;
+      particles.push(new Particle((x + c) * BLOCK_SIZE + BLOCK_SIZE / 2, (y + r) * BLOCK_SIZE + BLOCK_SIZE / 2, color, 2));
+    }
+  }
+}
+
+function updateParticles() {
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    if (particles[i].life <= 0) particles.splice(i, 1);
+  }
+}
+
+function drawParticles() {
+  for (const p of particles) p.draw(ctx);
+}
+
+// ============================================================
+//  背景星空
+// ============================================================
+let stars = [];
+
+function initStars() {
+  bgCanvas.width = window.innerWidth;
+  bgCanvas.height = window.innerHeight;
+  stars = [];
+  const count = Math.floor((bgCanvas.width * bgCanvas.height) / 3000);
+  for (let i = 0; i < count; i++) {
+    stars.push({
+      x: Math.random() * bgCanvas.width,
+      y: Math.random() * bgCanvas.height,
+      size: Math.random() * 1.8 + 0.2,
+      speed: Math.random() * 0.3 + 0.05,
+      alpha: Math.random() * 0.6 + 0.2,
+      twinkleSpeed: Math.random() * 0.02 + 0.005,
+      twinklePhase: Math.random() * Math.PI * 2,
+    });
+  }
+}
+
+function drawStars(time) {
+  bgCtx.clearRect(0, 0, bgCanvas.width, bgCanvas.height);
+  bgCtx.fillStyle = '#0a0a1a';
+  bgCtx.fillRect(0, 0, bgCanvas.width, bgCanvas.height);
+  for (const star of stars) {
+    const alpha = star.alpha * (0.6 + 0.4 * Math.sin(time * star.twinkleSpeed + star.twinklePhase));
+    bgCtx.globalAlpha = alpha;
+    bgCtx.fillStyle = '#fff';
+    bgCtx.beginPath();
+    bgCtx.arc(star.x, star.y, star.size, 0, Math.PI * 2);
+    bgCtx.fill();
+  }
+  bgCtx.globalAlpha = 1;
+}
+
+window.addEventListener('resize', initStars);
+
+// ============================================================
+//  音效和振动共享
+// ============================================================
+let shakeAmount = 0;
+
+// ============================================================
+//  游戏核心逻辑
+// ============================================================
+
+function createEmptyBoard() {
+  return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+}
+
+function randomPiece() {
+  const idx = Math.floor(Math.random() * SHAPES.length);
+  const shape = SHAPES[idx];
+  const blocks = shape.blocks.map(row => [...row]);
+  return { blocks, color: shape.color, glow: shape.glow, shapeIdx: idx };
+}
+
+function spawnNewPiece() {
+  if (!nextPiece) nextPiece = randomPiece();
+  const piece = {
+    blocks: nextPiece.blocks.map(row => [...row]),
+    color: nextPiece.color,
+    glow: nextPiece.glow,
+  };
+  piece.x = Math.floor((COLS - piece.blocks[0].length) / 2);
+  piece.y = 0;
+  currentPiece = piece;
+  nextPiece = randomPiece();
+  if (collides(currentPiece)) { endGame(); return false; }
+  return true;
+}
+
+function collides(piece) {
+  const { blocks, x, y } = piece;
+  for (let r = 0; r < blocks.length; r++) {
+    for (let c = 0; c < blocks[r].length; c++) {
+      if (!blocks[r][c]) continue;
+      const bx = x + c, by = y + r;
+      if (bx < 0 || bx >= COLS || by >= ROWS) return true;
+      if (by < 0) continue;
+      if (board[by][bx] !== null) return true;
+    }
+  }
+  return false;
+}
+
+function lockPiece() {
+  const { blocks, x, y, color } = currentPiece;
+  for (let r = 0; r < blocks.length; r++) {
+    for (let c = 0; c < blocks[r].length; c++) {
+      if (!blocks[r][c]) continue;
+      const bx = x + c, by = y + r;
+      if (by < 0) continue;
+      board[by][bx] = color;
+    }
+  }
+  SFX.lock();
+  clearFullRows();
+  if (gameRunning) { const ok = spawnNewPiece(); if (!ok) return; }
+}
+
+function clearFullRows() {
+  let cleared = 0;
+  for (let r = ROWS - 1; r >= 0; r--) {
+    if (board[r].every(cell => cell !== null)) {
+      // 生成粒子
+      spawnClearParticles(r);
+      board.splice(r, 1);
+      board.unshift(Array(COLS).fill(null));
+      cleared++;
+      r++;
+    }
+  }
+  if (cleared > 0) {
+    lines += cleared;
+    const addScore = (SCORE_TABLE[cleared] || 800) * level;
+    score += addScore;
+    const prevLevel = level;
+    level = Math.floor(lines / 10) + 1;
+    updateUI(true);
+    SFX.clear(cleared);
+    if (level > prevLevel) SFX.levelUp();
+    // 闪光效果
+    flashOverlay.style.background = 'rgba(255,255,255,0.3)';
+    flashOverlay.classList.add('flash');
+    setTimeout(() => flashOverlay.classList.remove('flash'), 100);
+  }
+}
+
+function movePiece(dx, dy) {
+  if (!gameRunning || paused || gameOver || !currentPiece) return false;
+  const newPiece = { ...currentPiece, x: currentPiece.x + dx, y: currentPiece.y + dy };
+  if (!collides(newPiece)) {
+    currentPiece = newPiece;
+    if (dx !== 0) SFX.move();
+    return true;
+  }
+  if (dy === 1) lockPiece();
+  return false;
+}
+
+function rotatePiece() {
+  if (!gameRunning || paused || gameOver || !currentPiece) return;
+  const old = currentPiece.blocks;
+  const rows = old.length, cols = old[0].length;
+  const rotated = Array.from({ length: cols }, (_, c) =>
+    Array.from({ length: rows }, (_, r) => old[rows - 1 - r][c])
+  );
+  const np = { ...currentPiece, blocks: rotated };
+  for (const dx of [0, -1, 1, 2]) {
+    np.x = currentPiece.x + dx;
+    if (!collides(np)) { currentPiece = np; SFX.rotate(); return; }
+  }
+}
+
+function hardDrop() {
+  if (!gameRunning || paused || gameOver || !currentPiece) return;
+  const startY = currentPiece.y;
+  while (!collides({ ...currentPiece, y: currentPiece.y + 1 })) currentPiece.y++;
+  const dist = currentPiece.y - startY;
+  if (dist > 0) {
+    shakeAmount = 6;
+    spawnDropParticles(currentPiece);
+    SFX.drop();
+  }
+  lockPiece();
+}
+
+function getDropInterval() {
+  return Math.max(50, 800 - (level - 1) * 60);
+}
+
+function scheduleDrop() {
+  if (dropTimer) clearTimeout(dropTimer);
+  if (!gameRunning || paused || gameOver) return;
+  dropTimer = setTimeout(() => {
+    if (!gameRunning || paused || gameOver) return;
+    movePiece(0, 1);
+    scheduleDrop();
+  }, getDropInterval());
+}
+
+// ============================================================
+//  渲染
+// ============================================================
+
+function drawBlock(context, x, y, color, size, glow) {
+  // 发光效果
+  if (glow) {
+    context.shadowColor = glow;
+    context.shadowBlur = 8;
+  }
+  context.fillStyle = color;
+  context.fillRect(x, y, size, size);
+  context.shadowBlur = 0;
+  // 高光
+  const grad = context.createLinearGradient(x, y, x, y + size);
+  grad.addColorStop(0, 'rgba(255,255,255,0.22)');
+  grad.addColorStop(0.5, 'rgba(255,255,255,0.04)');
+  grad.addColorStop(1, 'rgba(0,0,0,0.15)');
+  context.fillStyle = grad;
+  context.fillRect(x, y, size, size);
+  // 边缘高光
+  context.fillStyle = 'rgba(255,255,255,0.15)';
+  context.fillRect(x, y, size, 1.5);
+  context.fillRect(x, y, 1.5, size);
+}
+
+function drawGrid() {
+  ctx.strokeStyle = 'rgba(255,255,255,0.035)';
+  ctx.lineWidth = 0.5;
+  for (let c = 1; c < COLS; c++) {
+    ctx.beginPath();
+    ctx.moveTo(c * BLOCK_SIZE, 0);
+    ctx.lineTo(c * BLOCK_SIZE, boardCanvas.height);
+    ctx.stroke();
+  }
+  for (let r = 1; r < ROWS; r++) {
+    ctx.beginPath();
+    ctx.moveTo(0, r * BLOCK_SIZE);
+    ctx.lineTo(boardCanvas.width, r * BLOCK_SIZE);
+    ctx.stroke();
+  }
+}
+
+// 影子（落点预览）
+function drawGhost() {
+  if (!currentPiece || gameOver) return;
+  let ghostY = currentPiece.y;
+  while (!collides({ ...currentPiece, y: ghostY + 1 })) ghostY++;
+  if (ghostY === currentPiece.y) return;
+  const { blocks, x, color } = currentPiece;
+  for (let r = 0; r < blocks.length; r++) {
+    for (let c = 0; c < blocks[r].length; c++) {
+      if (!blocks[r][c]) continue;
+      const px = (x + c) * BLOCK_SIZE;
+      const py = (ghostY + r) * BLOCK_SIZE;
+      ctx.fillStyle = 'rgba(255,255,255,0.06)';
+      ctx.fillRect(px + 1, py + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(px + 1, py + 1, BLOCK_SIZE - 2, BLOCK_SIZE - 2);
+    }
+  }
+}
+
+function render() {
+  ctx.save();
+
+  // 屏幕震动
+  if (shakeAmount > 0) {
+    const sx = (Math.random() - 0.5) * shakeAmount;
+    const sy = (Math.random() - 0.5) * shakeAmount;
+    ctx.translate(sx, sy);
+    shakeAmount *= 0.85;
+    if (shakeAmount < 0.3) shakeAmount = 0;
+  }
+
+  ctx.clearRect(-10, -10, boardCanvas.width + 20, boardCanvas.height + 20);
+  drawGrid();
+
+  // 已固定方块
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      const color = board[r][c];
+      if (color) drawBlock(ctx, c * BLOCK_SIZE, r * BLOCK_SIZE, color, BLOCK_SIZE);
+    }
+  }
+
+  drawGhost();
+
+  // 当前方块
+  if (currentPiece && !gameOver) {
+    const { blocks, x, y, color, glow } = currentPiece;
+    for (let r = 0; r < blocks.length; r++) {
+      for (let c = 0; c < blocks[r].length; c++) {
+        if (!blocks[r][c]) continue;
+        drawBlock(ctx, (x + c) * BLOCK_SIZE, (y + r) * BLOCK_SIZE, color, BLOCK_SIZE, glow);
+      }
+    }
+  }
+
+  // 粒子
+  drawParticles();
+
+  ctx.restore();
+  renderPreview();
+}
+
+function renderPreview() {
+  nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+  if (!nextPiece) return;
+  const blocks = nextPiece.blocks;
+  const rows = blocks.length, cols = blocks[0].length;
+  const ox = (nextCanvas.width - cols * PREVIEW_BLOCK) / 2;
+  const oy = (nextCanvas.height - rows * PREVIEW_BLOCK) / 2;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      if (!blocks[r][c]) continue;
+      drawBlock(nextCtx, ox + c * PREVIEW_BLOCK, oy + r * PREVIEW_BLOCK, nextPiece.color, PREVIEW_BLOCK, nextPiece.glow);
+    }
+  }
+}
+
+function updateUI(pop) {
+  scoreDisplay.textContent = score.toLocaleString();
+  levelDisplay.textContent = level;
+  linesDisplay.textContent = lines;
+  if (pop) {
+    scoreDisplay.classList.remove('score-pop');
+    void scoreDisplay.offsetWidth;
+    scoreDisplay.classList.add('score-pop');
+  }
+}
+
+// ============================================================
+//  游戏循环
+// ============================================================
+let lastTime = 0;
+
+function gameLoop(time) {
+  if (!gameRunning) return;
+  updateParticles();
+  render();
+  if (!gameOver) animationId = requestAnimationFrame(gameLoop);
+}
+
+// ---- 背景星空动画 ----
+function bgLoop(time) {
+  drawStars(time);
+  requestAnimationFrame(bgLoop);
+}
+
+// ============================================================
+//  开始 / 暂停 / 结束
+// ============================================================
+
+function startGame() {
+  ensureAudio();
+  board = createEmptyBoard();
+  score = 0; level = 1; lines = 0;
+  gameOver = false; paused = false; gameRunning = true;
+  scoreSubmitted = false;
+  particles = [];
+  shakeAmount = 0;
+  gameOverOverlay.classList.remove('show');
+  nameInput.value = '';
+  btnSubmitScore.disabled = false;
+  updateUI();
+  nextPiece = randomPiece();
+  const ok = spawnNewPiece();
+  if (!ok) { endGame(); return; }
+  btnStart.disabled = true;
+  btnPause.disabled = false;
+  btnPause.textContent = '⏸ 暂停';
+  if (dropTimer) clearTimeout(dropTimer);
+  scheduleDrop();
+  if (animationId) cancelAnimationFrame(animationId);
+  animationId = requestAnimationFrame(gameLoop);
+}
+
+function endGame() {
+  gameOver = true;
+  gameRunning = false;
+  if (dropTimer) clearTimeout(dropTimer);
+  if (animationId) cancelAnimationFrame(animationId);
+  btnStart.disabled = false;
+  btnPause.disabled = true;
+  btnPause.textContent = '⏸ 暂停';
+  finalScoreEl.textContent = score.toLocaleString() + ' 分';
+  gameOverOverlay.classList.add('show');
+  SFX.gameOver();
+  render();
+  // 自动聚焦名字输入框
+  setTimeout(() => nameInput.focus(), 400);
+}
+
+function togglePause() {
+  if (!gameRunning || gameOver) return;
+  paused = !paused;
+  btnPause.textContent = paused ? '▶ 继续' : '⏸ 暂停';
+  if (paused) {
+    if (dropTimer) clearTimeout(dropTimer);
+  } else {
+    scheduleDrop();
+    if (!animationId) animationId = requestAnimationFrame(gameLoop);
+  }
+}
+
+// ============================================================
+//  排行榜
+// ============================================================
+
+async function fetchRank() {
+  try {
+    const res = await fetch('/api/rank');
+    const data = await res.json();
+    return data.scores || [];
+  } catch { return []; }
+}
+
+async function submitScore(name, score, level, lines) {
+  try {
+    await fetch('/api/rank', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, score, level, lines }),
+    });
+  } catch { /* ignore */ }
+}
+
+async function renderRank() {
+  const scores = await fetchRank();
+  if (scores.length === 0) {
+    rankList.innerHTML = '<div class="rank-empty">暂无记录</div>';
+    return;
+  }
+  rankList.innerHTML = scores.slice(0, 10).map((s, i) => {
+    const cls = i === 0 ? 'top1' : i === 1 ? 'top2' : i === 2 ? 'top3' : '';
+    return `<div class="rank-item">
+      <span class="rn ${cls}">${i + 1}</span>
+      <span class="r-name">${s.name}</span>
+      <span class="r-score">${s.score.toLocaleString()}</span>
+    </div>`;
+  }).join('');
+}
+
+btnRankToggle.addEventListener('click', async () => {
+  rankPanel.classList.toggle('show');
+  if (rankPanel.classList.contains('show')) {
+    await renderRank();
+  }
+});
+
+// 点击外部关闭排行榜
+document.addEventListener('click', (e) => {
+  if (!rankPanel.contains(e.target) && e.target !== btnRankToggle && !btnRankToggle.contains(e.target)) {
+    rankPanel.classList.remove('show');
+  }
+});
+
+// ============================================================
+//  键盘事件
+// ============================================================
+
+document.addEventListener('keydown', (e) => {
+  const key = e.key;
+  const arrows = ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ' ', 'p', 'P'];
+  if (arrows.includes(key)) e.preventDefault();
+
+  if (key === 'p' || key === 'P') {
+    if (gameRunning && !gameOver) togglePause();
+    return;
+  }
+  if (!gameRunning || paused || gameOver) return;
+  switch (key) {
+    case 'ArrowLeft':  movePiece(-1, 0); break;
+    case 'ArrowRight': movePiece(1, 0);  break;
+    case 'ArrowDown':  movePiece(0, 1);  break;
+    case 'ArrowUp':    rotatePiece();    break;
+    case ' ':          hardDrop();       break;
+  }
+});
+
+// ============================================================
+//  按钮事件
+// ============================================================
+
+btnStart.addEventListener('click', startGame);
+btnPause.addEventListener('click', togglePause);
+
+// 保存成绩
+btnSubmitScore.addEventListener('click', async () => {
+  if (scoreSubmitted) return;
+  const name = nameInput.value.trim() || '匿名玩家';
+  btnSubmitScore.disabled = true;
+  btnSubmitScore.textContent = '保存中...';
+  await submitScore(name, score, level, lines);
+  scoreSubmitted = true;
+  SFX.submitScore();
+  btnSubmitScore.textContent = '✅ 已保存';
+  await renderRank();
+  setTimeout(() => rankPanel.classList.add('show'), 300);
+});
+
+nameInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && !btnSubmitScore.disabled) btnSubmitScore.click();
+});
+
+// ============================================================
+//  初始化
+// ============================================================
+
+initStars();
+board = createEmptyBoard();
+nextPiece = randomPiece();
+render();
+updateUI();
+requestAnimationFrame(bgLoop);
+</script>
+</body>
+</html>
